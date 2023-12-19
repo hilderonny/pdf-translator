@@ -1,12 +1,21 @@
+# Siehe https://skeptric.com/python-offline-translation/
+
 VERSION = "1.0.0"
 
 import os
 import PyPDF2
+from typing import Sequence
 import PySimpleGUI as sg
 import subprocess, os, platform
 import datetime
 import hashlib
 import sys, getopt
+
+os.environ['HF_HOME'] = "./data/transformers_cache"
+from transformers import MarianMTModel, MarianTokenizer
+
+os.environ['STANZA_RESOURCES_DIR'] = "./data/stanza"
+import stanza
 
 sg.theme("SystemDefault1")
 
@@ -42,6 +51,17 @@ supported_languages = {
     "Ungarisch": "hu"
 }
 
+class Translator:
+    def __init__(self, source_lang: str, dest_lang: str) -> None:
+        self.model_name = f'Helsinki-NLP/opus-mt-{source_lang}-{dest_lang}'
+        self.model = MarianMTModel.from_pretrained(self.model_name)
+        self.tokenizer = MarianTokenizer.from_pretrained(self.model_name)
+        
+    def translate(self, texts: Sequence[str]) -> Sequence[str]:
+        tokens = self.tokenizer(list(texts), return_tensors="pt", padding=True)
+        translate_tokens = self.model.generate(**tokens)
+        return [self.tokenizer.decode(t, skip_special_tokens=True) for t in translate_tokens]
+
 class Logger(object):
 
     def __init__(self, text_field):
@@ -58,25 +78,9 @@ class Logger(object):
     def flush(object):
         pass
 
-def InstallPackages():
-    global window
-    os.environ["ARGOS_PACKAGES_DIR"] = "./data/argos-translate/packages"
-    import argostranslate.package
-    argostranslate.package.update_package_index()
-    available_packages = argostranslate.package.get_available_packages()
-    max_value = len(available_packages)
-    for i in range(max_value):
-        package = available_packages[i]
-        window["-OUTPUT-"].print("Lade " + package.from_code + "-" + package.to_code + " herunter ...")
-        window["-PROGRESSBAR-"].update(i, max_value)
-        download_path = package.download()
-        argostranslate.package.install_from_path(download_path)
-    window["-OUTPUT-"].print("Übersetzungsdaten heruntergeladen.")
-
 def TranslateAsync():
     global window, values, protokoll
     start_time = datetime.datetime.utcnow()
-    argos_translate_version = "1.8.1"
     file_path = values["-FILENAME-"]
     source_language_key = supported_languages[values["-SOURCELANGUAGE-"]]
     target_language_key = supported_languages[values["-TARGETLANGUAGE-"]]
@@ -85,19 +89,18 @@ def TranslateAsync():
         "=====================",
         f"Programm: PdfTranslator.pyw, Version {VERSION}",
         "Quelle: https://github.com/hilderonny/pdf-translator",
-        f"Übersetzung  mit: Argos Translate, Version {argos_translate_version}",
-        "Gerät: CPU",
+        "Übersetzung  mit MarianMT (https://huggingface.co/docs/transformers/model_doc/marian)",
         f"Datei: {file_path}",
         f"PDF-Sprache: {values['-SOURCELANGUAGE-']} ({source_language_key})",
         f"Ausgabesprache: {values['-TARGETLANGUAGE-']} ({target_language_key})"
     ]
-    # Argos Translate vorbereiten
-    os.environ["ARGOS_PACKAGES_DIR"] = "./data/argos-translate/packages"
-    os.environ["ARGOS_DEVICE_TYPE"] = "cpu"
-    window["-OUTPUT-"].print(f"Lade Argos Translate {argos_translate_version} für {values['-SOURCELANGUAGE-']} - {values['-TARGETLANGUAGE-']}")
-    import argostranslate.translate
-    window["-OUTPUT-"].print(f"{source_language_key} - {target_language_key}")
-    argos_translation = argostranslate.translate.get_translation_from_codes(source_language_key, target_language_key)
+    # Sätze-Parser vorbereiten
+    window["-OUTPUT-"].print(f"Lade Stanza für {values['-SOURCELANGUAGE-']}")
+    stanza.download(source_language_key)
+    nlp = stanza.Pipeline(source_language_key, processors="tokenize")
+    # Translator vorbereiten
+    window["-OUTPUT-"].print(f"Lade Translator für {values['-SOURCELANGUAGE-']} - {values['-TARGETLANGUAGE-']}")
+    translator = Translator(source_language_key, target_language_key)
     # PDF Datei laden
     with open(file_path, "rb") as pdf_file:
         pdf_reader = PyPDF2.PdfReader(pdf_file)
@@ -113,13 +116,15 @@ def TranslateAsync():
             protokoll.append(f"Seite {i + 1} von {num_pages}")
             protokoll.append("=============================")
             # Text extrahieren
-            direct_text = page.extract_text().replace("  ", " ") # Doppelte Leerzeichen entfernen
+            direct_text = page.extract_text()
             window["-OUTPUT-"].print("")
             window["-OUTPUT-"].print("Originaltext")
             window["-OUTPUT-"].print("------------")
             window["-OUTPUT-"].print(direct_text)
             # Text übersetzen
-            translated_text = argos_translation.translate(direct_text)
+            nlp_result = nlp.process(direct_text)
+            sentences = list(map(lambda sentence: sentence.text, nlp_result.sentences))
+            translated_text = "\n".join(translator.translate(sentences))
             window["-OUTPUT-"].print("")
             window["-OUTPUT-"].print("Übersetzung")
             window["-OUTPUT-"].print("-----------")
@@ -182,12 +187,7 @@ def main(argv):
     sys.stdout = Logger(window["-OUTPUT-"])
     sys.stderr = sys.stdout
 
-    # Prüfen, ob Modelle für Argos Translate vorhanden sind
-    if not os.path.isdir("./data/argos-translate/packages/en_de"):
-        sg.popup_ok("Übersetzungsdaten müssen heruntergeladen werden. Stellen Sie sicher, dass dafür eine Internetverbindung besteht!", title="Fehlende Übersetzungsdaten")
-        window.perform_long_operation(func=InstallPackages, end_key="-INSTALLDONE-")
-
-    protokoll = ""
+    protokoll = []
     while True:
         event, values = window.read()
         if event == sg.WIN_CLOSED:
