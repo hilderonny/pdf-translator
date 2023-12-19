@@ -2,7 +2,6 @@ VERSION = "1.0.0"
 
 import os
 import PyPDF2
-import pytesseract
 import PySimpleGUI as sg
 import subprocess, os, platform
 import datetime
@@ -134,29 +133,6 @@ def TranslateAsync():
             protokoll.append("Übersetzung"),
             protokoll.append("-----------"),
             protokoll.append(translated_text)
-            # Bilder extrahieren
-            for image in page.images:
-                # OCR auf Bild ausführen
-                image_text = pytesseract.image_to_string(image.data).replace("  ", " ") # Doppelte Leerzeichen entfernen
-                window["-OUTPUT-"].print("")
-                window["-OUTPUT-"].print("Originaltext")
-                window["-OUTPUT-"].print("------------")
-                window["-OUTPUT-"].print(image_text)
-                # Text übersetzen
-                translated_text = argos_translation.translate(image_text)
-                window["-OUTPUT-"].print("")
-                window["-OUTPUT-"].print("Übersetzung")
-                window["-OUTPUT-"].print("-----------")
-                window["-OUTPUT-"].print(translated_text)
-                # Protokoll schreiben
-                protokoll.append("")
-                protokoll.append("Originaltext"),
-                protokoll.append("------------"),
-                protokoll.append(direct_text)
-                protokoll.append("")
-                protokoll.append("Übersetzung"),
-                protokoll.append("-----------"),
-                protokoll.append(translated_text)
     stop_time = datetime.datetime.utcnow()
     duration = stop_time - start_time
     protokoll.append("")
@@ -165,6 +141,7 @@ def TranslateAsync():
     protokoll.append(f"Beginn: {start_time.isoformat()}")
     protokoll.append(f"Ende: {stop_time.isoformat()}")
     protokoll.append(f"Dauer: {duration}")
+    window["-PROGRESSBAR-"].update(1, 1)
 
 def main(argv):
     opts, _ = getopt.getopt(argv, "v", ["version"])
@@ -176,7 +153,7 @@ def main(argv):
     layout = [
         [
             sg.InputText(key="-FILENAME-", readonly=True, expand_x=True, enable_events=True), 
-            sg.FileBrowse(button_text="Datei auswählen ...", target="-FILENAME-")
+            sg.FileBrowse(button_text="Datei auswählen ...", target="-FILENAME-", file_types=(("PDF Dokumente", "*.pdf"),))
         ],
         [
             sg.Text("Sprache der PDF-Datei:"),
