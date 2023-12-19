@@ -1,0 +1,6 @@
+PyPDF2==3.0.1
+pytesseract==0.3.10
+lingua_language_detector=2.0.2
+argostranslate==1.9.1
+PySimpleGUI==4.60.5
+pyinstaller==6.0.0
