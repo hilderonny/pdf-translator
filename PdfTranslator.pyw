@@ -1,7 +1,8 @@
 VERSION = "1.0.0"
 
 import os
-import PyPDF2
+import fitz
+import pytesseract
 import PySimpleGUI as sg
 import subprocess, os, platform
 import datetime
@@ -99,12 +100,11 @@ def TranslateAsync():
     window["-OUTPUT-"].print(f"{source_language_key} - {target_language_key}")
     argos_translation = argostranslate.translate.get_translation_from_codes(source_language_key, target_language_key)
     # PDF Datei laden
-    with open(file_path, "rb") as pdf_file:
-        pdf_reader = PyPDF2.PdfReader(pdf_file)
+    with fitz.open(file_path) as pdf_file:
         # In Seiten separieren
-        num_pages = len(pdf_reader.pages)
-        for i in range(num_pages):
-            page = pdf_reader.pages[i]
+        num_pages = pdf_file.page_count
+        i = 0
+        for page in pdf_file:
             window["-OUTPUT-"].print("")
             window["-OUTPUT-"].print(f"Verarbeite Seite {i + 1} von {num_pages}")
             window["-OUTPUT-"].print("============================================")
@@ -112,27 +112,38 @@ def TranslateAsync():
             protokoll.append("")
             protokoll.append(f"Seite {i + 1} von {num_pages}")
             protokoll.append("=============================")
-            # Text extrahieren
-            direct_text = page.extract_text().replace("  ", " ") # Doppelte Leerzeichen entfernen
+            # Bild generieren
+            pixmap = page.get_pixmap(dpi=600)
+            pixmap.save("page.png")
+            # Text aus Bild extrahieren
+            image_text = pytesseract.image_to_string("page.png")
+            window["-OUTPUT-"].print("")
+            window["-OUTPUT-"].print("Bildtext")
+            window["-OUTPUT-"].print("------------")
+            window["-OUTPUT-"].print(image_text)
+            # Text direkt extrahieren
+            direct_text = page.get_text()
             window["-OUTPUT-"].print("")
             window["-OUTPUT-"].print("Originaltext")
             window["-OUTPUT-"].print("------------")
             window["-OUTPUT-"].print(direct_text)
             # Text übersetzen
-            translated_text = argos_translation.translate(direct_text)
+            #translated_text = argos_translation.translate(direct_text)
             window["-OUTPUT-"].print("")
             window["-OUTPUT-"].print("Übersetzung")
             window["-OUTPUT-"].print("-----------")
-            window["-OUTPUT-"].print(translated_text)
+            #window["-OUTPUT-"].print(translated_text)
             # Protokoll schreiben
             protokoll.append("")
             protokoll.append("Originaltext"),
             protokoll.append("------------"),
-            protokoll.append(direct_text)
+            #protokoll.append(direct_text)
             protokoll.append("")
             protokoll.append("Übersetzung"),
             protokoll.append("-----------"),
-            protokoll.append(translated_text)
+            #protokoll.append(translated_text)
+            i += 1
+            break
     stop_time = datetime.datetime.utcnow()
     duration = stop_time - start_time
     protokoll.append("")

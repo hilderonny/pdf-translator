@@ -1,4 +1,5 @@
-PyPDF2==3.0.1
+PyMuPDFb==1.23.7
+pytesseract==0.3.10
 argostranslate==1.9.1
 PySimpleGUI==4.60.5
 pyinstaller==6.0.0
