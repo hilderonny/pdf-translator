@@ -2,7 +2,7 @@
 
 # CUDA Installation laut https://pytorch.org/get-started/locally/ : pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 import os
 import PyPDF2
@@ -24,32 +24,40 @@ sg.theme("SystemDefault1")
 
 supported_languages = {
     "Arabisch": "ar", 
-    "Aserbaidschanisch": "az", 
-    "Chinesisch": "zh", 
-    "Dänisch": "da", 
-    "Deutsch": "de", 
+    #"Aserbaidschanisch": "az", 
+    #"Chinesisch": "zh", 
+    #"Dänisch": "da", 
+    #"Deutsch": "de", 
     "Englisch": "en", 
-    "Esperanto": "eo", 
-    "Finnisch": "fi", 
+    #"Esperanto": "eo", 
+    #"Finnisch": "fi", 
     "Französisch": "fr", 
-    "Griechisch": "el", 
-    "Hebräisch": "he", 
-    "Hindi": "hi", 
-    "Indonesisch": "id", 
-    "Irisch": "ga", 
-    "Italienisch": "it", 
-    "Japanisch": "ja", 
-    "Koreanisch": "ko", 
-    "Niederländisch": "nl", 
-    "Persisch": "fa", 
-    "Polnisch": "pl", 
-    "Portugiesisch": "pt", 
-    "Russisch": "ru", 
-    "Schwedisch": "sv", 
-    "Slowakisch": "sk", 
-    "Spanisch": "es", 
-    "Tschechisch": "cs", 
-    "Türkisch": "tr", 
+    #"Griechisch": "el", 
+    #"Hebräisch": "he", 
+    #"Hindi": "hi", 
+    #"Indonesisch": "id", 
+    #"Irisch": "ga", 
+    #"Italienisch": "it", 
+    #"Japanisch": "ja", 
+    #"Koreanisch": "ko", 
+    #"Niederländisch": "nl", 
+    #"Persisch": "fa", 
+    #"Polnisch": "pl", 
+    #"Portugiesisch": "pt", 
+
+    # Für Sprachen, für die es keine direkte Übersetzung gibt, könnte so vorgegangen werden:
+    # 1. HuggingFace-Modell für SPRACHE-en herunterladen
+    # 2. Huggingface-Modell für en-de herunterladen
+    # 3. Text von Originalsprache nach englisch übersetzen
+    # 4. Text von englisch nach deutsch übersetzen
+    # Das sollte satzweise passieren
+
+    #"Russisch": "ru", # Hierfür gibt es unter https://huggingface.co/Helsinki-NLP?search_models=opus-mt-ru kein Modell, welches direkt nach deutsch übersetzt
+    #"Schwedisch": "sv", 
+    #"Slowakisch": "sk", 
+    #"Spanisch": "es", 
+    #"Tschechisch": "cs", 
+    #"Türkisch": "tr", # Hierfür gibt es unter https://huggingface.co/Helsinki-NLP?search_models=opus-mt-tr kein Modell, welches direkt nach deutsch übersetzt
     "Ukrainisch": "uk",
     "Ungarisch": "hu"
 }
@@ -92,7 +100,7 @@ def TranslateAsync():
     file_path = values["-FILENAME-"]
     use_gpu = values["-USEGPU-"]
     source_language_key = supported_languages[values["-SOURCELANGUAGE-"]]
-    target_language_key = supported_languages[values["-TARGETLANGUAGE-"]]
+    target_language_key = "de"
     protokoll = [
         "Programminformationen",
         "=====================",
@@ -101,15 +109,17 @@ def TranslateAsync():
         "Übersetzung  mit MarianMT (https://huggingface.co/docs/transformers/model_doc/marian)",
         f"GPU verwendet: {use_gpu}",
         f"Datei: {file_path}",
-        f"PDF-Sprache: {values['-SOURCELANGUAGE-']} ({source_language_key})",
-        f"Ausgabesprache: {values['-TARGETLANGUAGE-']} ({target_language_key})"
+        f"PDF-Sprache: {values['-SOURCELANGUAGE-']} ({source_language_key})"
     ]
     # Sätze-Parser vorbereiten
     window["-OUTPUT-"].print(f"Lade Stanza für {values['-SOURCELANGUAGE-']}")
-    stanza.download(source_language_key)
+    try:
+        stanza.download(source_language_key)
+    finally:
+        pass
     nlp = stanza.Pipeline(source_language_key, processors="tokenize", use_gpu=use_gpu)
     # Translator vorbereiten
-    window["-OUTPUT-"].print(f"Lade Translator für {values['-SOURCELANGUAGE-']} - {values['-TARGETLANGUAGE-']}")
+    window["-OUTPUT-"].print(f"Lade Translator für {values['-SOURCELANGUAGE-']}")
     translator = Translator(source_language_key, target_language_key, use_gpu)
     # PDF Datei laden
     with open(file_path, "rb") as pdf_file:
@@ -191,8 +201,6 @@ def main(argv):
             sg.Checkbox("GPU verwenden", default=False, key="-USEGPU-"),
             sg.Text("Sprache der PDF-Datei:"),
             sg.Combo(list(supported_languages.keys()), auto_size_text=True, default_value="Englisch", readonly=True, key="-SOURCELANGUAGE-"),
-            sg.Text("Ausgabesprache:"),
-            sg.Combo(list(supported_languages.keys()), auto_size_text=True, default_value="Deutsch", readonly=True, key="-TARGETLANGUAGE-"),
         ],
         [
             sg.Button(button_text="Verarbeitung starten", key="-STARTEN-", disabled=True)
