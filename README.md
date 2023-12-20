@@ -12,7 +12,9 @@ Mit diesem Tool können PDF-Dokumente übersetzt werden.
 
 Einfach die neueste ZIP-Datei von [hier](https://github.com/hilderonny/pdf-translator/releases) herunterladen, entpacken und die Datei **PdfTranslator.exe** ausführen. Das Programm benötigt keine Installation.
 
-Wenn das Programm läuft, wählt man eine Datei, die darin enthaltene Sprache und die Zielsprache aus und startet die Übersetzung.
+Wenn das Programm läuft, wählt man eine Datei, die darin enthaltene Sprache und startet die Übersetzung.
+
+Bei der ersten Ausführung werden die benötigten KNN-Modelle (je Sprache etwa 1 GB) heruntergeladen.
 
 Nach Abschluss wird im Anwendungsfenster ein Protokoll der Übersetzung angezeigt, welches in einer Textdatei gespeichert werden kann.
 
