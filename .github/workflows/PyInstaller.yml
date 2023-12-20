@@ -25,10 +25,6 @@ jobs:
       - name: Determine version
         run: echo "::set-output name=version::$(python ./PdfTranslator.pyw --version)"
         id: version
-      - name: Create executable
-        run: pyinstaller -w ./PdfTranslator.pyw
-      - name: Zip Folder
-        run: Compress-Archive -Path ./dist/PdfTranslator/* -DestinationPath ./PdfTranslator.zip
       - name: Create release
         uses: actions/create-release@v1
         id: create_release
@@ -40,12 +36,3 @@ jobs:
           body_path: CHANGELOG.md
         env:
           GITHUB_TOKEN: ${{ github.token }}
-      - name: Upload artifacts
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./PdfTranslator.zip
-          asset_name: PdfTranslator_${{ steps.version.outputs.version }}.zip
-          asset_content_type: application/zip
