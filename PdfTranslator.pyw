@@ -188,7 +188,7 @@ def main(argv):
             sg.FileBrowse(button_text="Datei auswählen ...", target="-FILENAME-", file_types=(("PDF Dokumente", "*.pdf"),))
         ],
         [
-            sg.Checkbox("GPU verwenden", default=True, key="-USEGPU-"),
+            sg.Checkbox("GPU verwenden", default=False, key="-USEGPU-"),
             sg.Text("Sprache der PDF-Datei:"),
             sg.Combo(list(supported_languages.keys()), auto_size_text=True, default_value="Englisch", readonly=True, key="-SOURCELANGUAGE-"),
             sg.Text("Ausgabesprache:"),
