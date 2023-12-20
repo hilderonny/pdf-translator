@@ -1,46 +1,82 @@
-VERSION = "1.0.0"
+# Siehe https://skeptric.com/python-offline-translation/
+
+# CUDA Installation laut https://pytorch.org/get-started/locally/ : pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+
+VERSION = "1.1.0"
 
 import os
 import PyPDF2
+from typing import Sequence
 import PySimpleGUI as sg
 import subprocess, os, platform
 import datetime
 import hashlib
 import sys, getopt
+import re
+
+os.environ['HF_HOME'] = "./data/transformers_cache"
+from transformers import MarianMTModel, MarianTokenizer
+
+os.environ['STANZA_RESOURCES_DIR'] = "./data/stanza"
+import stanza
 
 sg.theme("SystemDefault1")
 
 supported_languages = {
     "Arabisch": "ar", 
-    "Aserbaidschanisch": "az", 
-    "Chinesisch": "zh", 
-    "Dänisch": "da", 
-    "Deutsch": "de", 
+    #"Aserbaidschanisch": "az", 
+    #"Chinesisch": "zh", 
+    #"Dänisch": "da", 
+    #"Deutsch": "de", 
     "Englisch": "en", 
-    "Esperanto": "eo", 
-    "Finnisch": "fi", 
+    #"Esperanto": "eo", 
+    #"Finnisch": "fi", 
     "Französisch": "fr", 
-    "Griechisch": "el", 
-    "Hebräisch": "he", 
-    "Hindi": "hi", 
-    "Indonesisch": "id", 
-    "Irisch": "ga", 
-    "Italienisch": "it", 
-    "Japanisch": "ja", 
-    "Koreanisch": "ko", 
-    "Niederländisch": "nl", 
-    "Persisch": "fa", 
-    "Polnisch": "pl", 
-    "Portugiesisch": "pt", 
-    "Russisch": "ru", 
-    "Schwedisch": "sv", 
-    "Slowakisch": "sk", 
-    "Spanisch": "es", 
-    "Tschechisch": "cs", 
-    "Türkisch": "tr", 
+    #"Griechisch": "el", 
+    #"Hebräisch": "he", 
+    #"Hindi": "hi", 
+    #"Indonesisch": "id", 
+    #"Irisch": "ga", 
+    #"Italienisch": "it", 
+    #"Japanisch": "ja", 
+    #"Koreanisch": "ko", 
+    #"Niederländisch": "nl", 
+    #"Persisch": "fa", 
+    #"Polnisch": "pl", 
+    #"Portugiesisch": "pt", 
+
+    # Für Sprachen, für die es keine direkte Übersetzung gibt, könnte so vorgegangen werden:
+    # 1. HuggingFace-Modell für SPRACHE-en herunterladen
+    # 2. Huggingface-Modell für en-de herunterladen
+    # 3. Text von Originalsprache nach englisch übersetzen
+    # 4. Text von englisch nach deutsch übersetzen
+    # Das sollte satzweise passieren
+
+    #"Russisch": "ru", # Hierfür gibt es unter https://huggingface.co/Helsinki-NLP?search_models=opus-mt-ru kein Modell, welches direkt nach deutsch übersetzt
+    #"Schwedisch": "sv", 
+    #"Slowakisch": "sk", 
+    #"Spanisch": "es", 
+    #"Tschechisch": "cs", 
+    #"Türkisch": "tr", # Hierfür gibt es unter https://huggingface.co/Helsinki-NLP?search_models=opus-mt-tr kein Modell, welches direkt nach deutsch übersetzt
     "Ukrainisch": "uk",
     "Ungarisch": "hu"
 }
+
+class Translator:
+    def __init__(self, source_lang: str, dest_lang: str, use_gpu: bool=False) -> None:
+        self.use_gpu = use_gpu
+        self.model_name = f'Helsinki-NLP/opus-mt-{source_lang}-{dest_lang}'
+        self.model = MarianMTModel.from_pretrained(self.model_name)
+        if use_gpu:
+            self.model = self.model.cuda()
+        self.tokenizer = MarianTokenizer.from_pretrained(self.model_name)
+        
+    def translate(self, texts: Sequence[str]) -> Sequence[str]:
+        tokens = self.tokenizer(list(texts), return_tensors="pt", padding=True)
+        if self.use_gpu:
+            tokens = {k:v.cuda() for k, v in tokens.items()}
+        translate_tokens = self.model.generate(**tokens)
+        return [self.tokenizer.decode(t, skip_special_tokens=True) for t in translate_tokens]
 
 class Logger(object):
 
@@ -58,46 +94,33 @@ class Logger(object):
     def flush(object):
         pass
 
-def InstallPackages():
-    global window
-    os.environ["ARGOS_PACKAGES_DIR"] = "./data/argos-translate/packages"
-    import argostranslate.package
-    argostranslate.package.update_package_index()
-    available_packages = argostranslate.package.get_available_packages()
-    max_value = len(available_packages)
-    for i in range(max_value):
-        package = available_packages[i]
-        window["-OUTPUT-"].print("Lade " + package.from_code + "-" + package.to_code + " herunter ...")
-        window["-PROGRESSBAR-"].update(i, max_value)
-        download_path = package.download()
-        argostranslate.package.install_from_path(download_path)
-    window["-OUTPUT-"].print("Übersetzungsdaten heruntergeladen.")
-
 def TranslateAsync():
     global window, values, protokoll
     start_time = datetime.datetime.utcnow()
-    argos_translate_version = "1.8.1"
     file_path = values["-FILENAME-"]
+    use_gpu = values["-USEGPU-"]
     source_language_key = supported_languages[values["-SOURCELANGUAGE-"]]
-    target_language_key = supported_languages[values["-TARGETLANGUAGE-"]]
+    target_language_key = "de"
     protokoll = [
         "Programminformationen",
         "=====================",
         f"Programm: PdfTranslator.pyw, Version {VERSION}",
         "Quelle: https://github.com/hilderonny/pdf-translator",
-        f"Übersetzung  mit: Argos Translate, Version {argos_translate_version}",
-        "Gerät: CPU",
+        "Übersetzung  mit MarianMT (https://huggingface.co/docs/transformers/model_doc/marian)",
+        f"GPU verwendet: {use_gpu}",
         f"Datei: {file_path}",
-        f"PDF-Sprache: {values['-SOURCELANGUAGE-']} ({source_language_key})",
-        f"Ausgabesprache: {values['-TARGETLANGUAGE-']} ({target_language_key})"
+        f"PDF-Sprache: {values['-SOURCELANGUAGE-']} ({source_language_key})"
     ]
-    # Argos Translate vorbereiten
-    os.environ["ARGOS_PACKAGES_DIR"] = "./data/argos-translate/packages"
-    os.environ["ARGOS_DEVICE_TYPE"] = "cpu"
-    window["-OUTPUT-"].print(f"Lade Argos Translate {argos_translate_version} für {values['-SOURCELANGUAGE-']} - {values['-TARGETLANGUAGE-']}")
-    import argostranslate.translate
-    window["-OUTPUT-"].print(f"{source_language_key} - {target_language_key}")
-    argos_translation = argostranslate.translate.get_translation_from_codes(source_language_key, target_language_key)
+    # Sätze-Parser vorbereiten
+    window["-OUTPUT-"].print(f"Lade Stanza für {values['-SOURCELANGUAGE-']}")
+    try:
+        stanza.download(source_language_key)
+    finally:
+        pass
+    nlp = stanza.Pipeline(source_language_key, processors="tokenize", use_gpu=use_gpu)
+    # Translator vorbereiten
+    window["-OUTPUT-"].print(f"Lade Translator für {values['-SOURCELANGUAGE-']}")
+    translator = Translator(source_language_key, target_language_key, use_gpu)
     # PDF Datei laden
     with open(file_path, "rb") as pdf_file:
         pdf_reader = PyPDF2.PdfReader(pdf_file)
@@ -113,13 +136,32 @@ def TranslateAsync():
             protokoll.append(f"Seite {i + 1} von {num_pages}")
             protokoll.append("=============================")
             # Text extrahieren
-            direct_text = page.extract_text().replace("  ", " ") # Doppelte Leerzeichen entfernen
+            direct_text = page.extract_text()
             window["-OUTPUT-"].print("")
             window["-OUTPUT-"].print("Originaltext")
             window["-OUTPUT-"].print("------------")
             window["-OUTPUT-"].print(direct_text)
             # Text übersetzen
-            translated_text = argos_translation.translate(direct_text)
+            nlp_result = nlp.process(direct_text)
+            detected_sentences = list(map(lambda sentence: sentence.text, nlp_result.sentences))
+            sentences_to_process = []
+            # Aufteilung nach grammatisch erkannten Sätzen
+            for sentence in detected_sentences:
+                if len(sentence) < 600:
+                    if len(sentence) > 1:
+                        sentences_to_process.append(sentence)
+                else:
+                    # Sätze erscheinen zu lang. Aufteilung nach Punktuation
+                    for sentence_part in re.split("\.|\?|\!|\:", sentence):
+                        if len(sentence_part) > 600:
+                            # Immernoch zu lang, Aufteilung nach Zeilenumbrüchen
+                            for line in sentence_part.splitlines():
+                                if len(line) > 1:
+                                    sentences_to_process.append(line)
+                        elif len(sentence_part) > 1:
+                            sentences_to_process.append(sentence_part)
+            translated_text = "\n".join(translator.translate(sentences_to_process))
+            #translated_text = "\n".join(translator.translate([direct_text]))
             window["-OUTPUT-"].print("")
             window["-OUTPUT-"].print("Übersetzung")
             window["-OUTPUT-"].print("-----------")
@@ -156,10 +198,9 @@ def main(argv):
             sg.FileBrowse(button_text="Datei auswählen ...", target="-FILENAME-", file_types=(("PDF Dokumente", "*.pdf"),))
         ],
         [
+            sg.Checkbox("GPU verwenden", default=False, key="-USEGPU-"),
             sg.Text("Sprache der PDF-Datei:"),
             sg.Combo(list(supported_languages.keys()), auto_size_text=True, default_value="Englisch", readonly=True, key="-SOURCELANGUAGE-"),
-            sg.Text("Ausgabesprache:"),
-            sg.Combo(list(supported_languages.keys()), auto_size_text=True, default_value="Deutsch", readonly=True, key="-TARGETLANGUAGE-"),
         ],
         [
             sg.Button(button_text="Verarbeitung starten", key="-STARTEN-", disabled=True)
@@ -182,12 +223,7 @@ def main(argv):
     sys.stdout = Logger(window["-OUTPUT-"])
     sys.stderr = sys.stdout
 
-    # Prüfen, ob Modelle für Argos Translate vorhanden sind
-    if not os.path.isdir("./data/argos-translate/packages/en_de"):
-        sg.popup_ok("Übersetzungsdaten müssen heruntergeladen werden. Stellen Sie sicher, dass dafür eine Internetverbindung besteht!", title="Fehlende Übersetzungsdaten")
-        window.perform_long_operation(func=InstallPackages, end_key="-INSTALLDONE-")
-
-    protokoll = ""
+    protokoll = []
     while True:
         event, values = window.read()
         if event == sg.WIN_CLOSED:
