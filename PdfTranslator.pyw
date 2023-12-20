@@ -1,5 +1,7 @@
 # Siehe https://skeptric.com/python-offline-translation/
 
+# CUDA Installation laut https://pytorch.org/get-started/locally/ : pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+
 VERSION = "1.0.0"
 
 import os
@@ -10,6 +12,7 @@ import subprocess, os, platform
 import datetime
 import hashlib
 import sys, getopt
+import re
 
 os.environ['HF_HOME'] = "./data/transformers_cache"
 from transformers import MarianMTModel, MarianTokenizer
@@ -52,13 +55,18 @@ supported_languages = {
 }
 
 class Translator:
-    def __init__(self, source_lang: str, dest_lang: str) -> None:
+    def __init__(self, source_lang: str, dest_lang: str, use_gpu: bool=False) -> None:
+        self.use_gpu = use_gpu
         self.model_name = f'Helsinki-NLP/opus-mt-{source_lang}-{dest_lang}'
         self.model = MarianMTModel.from_pretrained(self.model_name)
+        if use_gpu:
+            self.model = self.model.cuda()
         self.tokenizer = MarianTokenizer.from_pretrained(self.model_name)
         
     def translate(self, texts: Sequence[str]) -> Sequence[str]:
         tokens = self.tokenizer(list(texts), return_tensors="pt", padding=True)
+        if self.use_gpu:
+            tokens = {k:v.cuda() for k, v in tokens.items()}
         translate_tokens = self.model.generate(**tokens)
         return [self.tokenizer.decode(t, skip_special_tokens=True) for t in translate_tokens]
 
@@ -82,6 +90,7 @@ def TranslateAsync():
     global window, values, protokoll
     start_time = datetime.datetime.utcnow()
     file_path = values["-FILENAME-"]
+    use_gpu = values["-USEGPU-"]
     source_language_key = supported_languages[values["-SOURCELANGUAGE-"]]
     target_language_key = supported_languages[values["-TARGETLANGUAGE-"]]
     protokoll = [
@@ -90,6 +99,7 @@ def TranslateAsync():
         f"Programm: PdfTranslator.pyw, Version {VERSION}",
         "Quelle: https://github.com/hilderonny/pdf-translator",
         "Übersetzung  mit MarianMT (https://huggingface.co/docs/transformers/model_doc/marian)",
+        f"GPU verwendet: {use_gpu}",
         f"Datei: {file_path}",
         f"PDF-Sprache: {values['-SOURCELANGUAGE-']} ({source_language_key})",
         f"Ausgabesprache: {values['-TARGETLANGUAGE-']} ({target_language_key})"
@@ -97,10 +107,10 @@ def TranslateAsync():
     # Sätze-Parser vorbereiten
     window["-OUTPUT-"].print(f"Lade Stanza für {values['-SOURCELANGUAGE-']}")
     stanza.download(source_language_key)
-    nlp = stanza.Pipeline(source_language_key, processors="tokenize")
+    nlp = stanza.Pipeline(source_language_key, processors="tokenize", use_gpu=use_gpu)
     # Translator vorbereiten
     window["-OUTPUT-"].print(f"Lade Translator für {values['-SOURCELANGUAGE-']} - {values['-TARGETLANGUAGE-']}")
-    translator = Translator(source_language_key, target_language_key)
+    translator = Translator(source_language_key, target_language_key, use_gpu)
     # PDF Datei laden
     with open(file_path, "rb") as pdf_file:
         pdf_reader = PyPDF2.PdfReader(pdf_file)
@@ -123,8 +133,25 @@ def TranslateAsync():
             window["-OUTPUT-"].print(direct_text)
             # Text übersetzen
             nlp_result = nlp.process(direct_text)
-            sentences = list(map(lambda sentence: sentence.text, nlp_result.sentences))
-            translated_text = "\n".join(translator.translate(sentences))
+            detected_sentences = list(map(lambda sentence: sentence.text, nlp_result.sentences))
+            sentences_to_process = []
+            # Aufteilung nach grammatisch erkannten Sätzen
+            for sentence in detected_sentences:
+                if len(sentence) < 600:
+                    if len(sentence) > 1:
+                        sentences_to_process.append(sentence)
+                else:
+                    # Sätze erscheinen zu lang. Aufteilung nach Punktuation
+                    for sentence_part in re.split("\.|\?|\!|\:", sentence):
+                        if len(sentence_part) > 600:
+                            # Immernoch zu lang, Aufteilung nach Zeilenumbrüchen
+                            for line in sentence_part.splitlines():
+                                if len(line) > 1:
+                                    sentences_to_process.append(line)
+                        elif len(sentence_part) > 1:
+                            sentences_to_process.append(sentence_part)
+            translated_text = "\n".join(translator.translate(sentences_to_process))
+            #translated_text = "\n".join(translator.translate([direct_text]))
             window["-OUTPUT-"].print("")
             window["-OUTPUT-"].print("Übersetzung")
             window["-OUTPUT-"].print("-----------")
@@ -161,6 +188,7 @@ def main(argv):
             sg.FileBrowse(button_text="Datei auswählen ...", target="-FILENAME-", file_types=(("PDF Dokumente", "*.pdf"),))
         ],
         [
+            sg.Checkbox("GPU verwenden", default=True, key="-USEGPU-"),
             sg.Text("Sprache der PDF-Datei:"),
             sg.Combo(list(supported_languages.keys()), auto_size_text=True, default_value="Englisch", readonly=True, key="-SOURCELANGUAGE-"),
             sg.Text("Ausgabesprache:"),
