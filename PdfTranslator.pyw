@@ -113,10 +113,7 @@ def TranslateAsync():
     ]
     # Sätze-Parser vorbereiten
     window["-OUTPUT-"].print(f"Lade Stanza für {values['-SOURCELANGUAGE-']}")
-    try:
-        stanza.download(source_language_key)
-    finally:
-        pass
+    #stanza.download(source_language_key)
     nlp = stanza.Pipeline(source_language_key, processors="tokenize", use_gpu=use_gpu)
     # Translator vorbereiten
     window["-OUTPUT-"].print(f"Lade Translator für {values['-SOURCELANGUAGE-']}")
